@@ -1,21 +1,25 @@
 import streamlit as st
 import torch
-from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
+import pandas as pd
 import plotly.graph_objects as go
-import time
+from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+from collections import Counter
+import re
 
-# ----------------------------
-# PAGE CONFIG
-# ----------------------------
+# -----------------------------
+# Page Config
+# -----------------------------
 
 st.set_page_config(
-    page_title="Amazon Sentiment AI",
-    layout="wide",
+    page_title="Amazon Review Sentiment Dashboard",
+    layout="wide"
 )
 
-# ----------------------------
-# LOAD MODEL
-# ----------------------------
+# -----------------------------
+# Load Model
+# -----------------------------
 
 @st.cache_resource
 def load_model():
@@ -26,9 +30,9 @@ def load_model():
 
 tokenizer, model = load_model()
 
-# ----------------------------
-# SENTIMENT FUNCTION
-# ----------------------------
+# -----------------------------
+# Prediction Function
+# -----------------------------
 
 def predict_sentiment(text):
 
@@ -45,193 +49,168 @@ def predict_sentiment(text):
 
     probs = torch.nn.functional.softmax(outputs.logits, dim=1)[0]
 
-    negative_prob = float(probs[0])
-    positive_prob = float(probs[1])
+    neg = float(probs[0])
+    pos = float(probs[1])
 
-    prediction = torch.argmax(probs).item()
+    sentiment = "Positive 😊" if pos > neg else "Negative 😞"
 
-    sentiment = "Positive 😊" if prediction == 1 else "Negative 😞"
-
-    return sentiment, positive_prob, negative_prob
+    return sentiment, pos, neg
 
 
-# ----------------------------
-# MODERN CSS
-# ----------------------------
+# -----------------------------
+# Clean Text
+# -----------------------------
 
-st.markdown("""
-<style>
+def clean_text(text):
 
-body {
-background-color:#0E1117;
-color:white;
-}
+    text = text.lower()
+    text = re.sub(r"[^a-z ]", "", text)
+    words = text.split()
 
-.big-title {
-font-size:55px;
-font-weight:800;
-text-align:center;
-background: linear-gradient(90deg,#00DBDE,#FC00FF);
--webkit-background-clip:text;
--webkit-text-fill-color:transparent;
-animation: glow 2s infinite alternate;
-}
+    return words
 
-@keyframes glow {
-from {opacity:0.7;}
-to {opacity:1;}
-}
 
-.card {
-background: rgba(255,255,255,0.05);
-padding:25px;
-border-radius:18px;
-backdrop-filter: blur(10px);
-margin-bottom:20px;
-box-shadow:0px 0px 15px rgba(0,0,0,0.4);
-}
+# -----------------------------
+# Title
+# -----------------------------
 
-.stButton>button {
-background: linear-gradient(90deg,#00DBDE,#FC00FF);
-color:white;
-font-size:18px;
-height:50px;
-width:220px;
-border-radius:12px;
-}
+st.title("Amazon Review Sentiment Dashboard")
 
-</style>
-""", unsafe_allow_html=True)
+st.write("Sentiment analysis using DistilBERT Transformer model")
 
-# ----------------------------
-# TITLE
-# ----------------------------
+# -----------------------------
+# Sidebar
+# -----------------------------
 
-st.markdown('<div class="big-title">Amazon Review Sentiment AI</div>', unsafe_allow_html=True)
+mode = st.sidebar.radio(
+    "Choose Analysis Mode",
+    ["Single Review", "Bulk CSV Analysis"]
+)
 
-st.write("### Transformer-based sentiment analysis using DistilBERT")
+# =================================================
+# SINGLE REVIEW ANALYSIS
+# =================================================
 
-# ----------------------------
-# SIDEBAR
-# ----------------------------
+if mode == "Single Review":
 
-st.sidebar.title("AI Model Info")
+    review = st.text_area("Enter product review")
 
-st.sidebar.markdown("""
-Model : DistilBERT  
-Training Samples : 5000  
-Environment : CPU  
-Task : Sentiment Classification  
-""")
+    if st.button("Analyze Sentiment"):
 
-# ----------------------------
-# INPUT SECTION
-# ----------------------------
+        if review.strip() == "":
+            st.warning("Please enter a review")
 
-st.markdown('<div class="card">', unsafe_allow_html=True)
-
-review = st.text_area("Write your product review here", height=150)
-
-analyze = st.button("Analyze Sentiment")
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-# ----------------------------
-# ANALYSIS
-# ----------------------------
-
-if analyze:
-
-    if review.strip() == "":
-        st.warning("Please enter a review")
-    else:
-
-        with st.spinner("Analyzing sentiment with AI..."):
-            time.sleep(1.5)
-
-        sentiment, pos_prob, neg_prob = predict_sentiment(review)
-
-        st.success(f"### Prediction : {sentiment}")
-
-        # ----------------------------
-        # PROBABILITY BAR
-        # ----------------------------
-
-        fig = go.Figure(data=[
-            go.Bar(name="Positive", x=["Sentiment"], y=[pos_prob]),
-            go.Bar(name="Negative", x=["Sentiment"], y=[neg_prob])
-        ])
-
-        fig.update_layout(
-            template="plotly_dark",
-            title="Sentiment Probability",
-            barmode="group"
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-
-        # ----------------------------
-        # CONFIDENCE GAUGE
-        # ----------------------------
-
-        confidence = max(pos_prob, neg_prob)
-
-        gauge = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=confidence*100,
-            title={'text': "Confidence Level"},
-            gauge={
-                'axis': {'range': [0,100]},
-                'bar': {'color': "#00DBDE"},
-                'steps': [
-                    {'range':[0,50],'color':"#8B0000"},
-                    {'range':[50,75],'color':"#FFA500"},
-                    {'range':[75,100],'color':"#00FF7F"},
-                ]
-            }
-        ))
-
-        gauge.update_layout(template="plotly_dark")
-
-        st.plotly_chart(gauge, use_container_width=True)
-
-        # ----------------------------
-        # STATS
-        # ----------------------------
-
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-
-        st.subheader("Review Statistics")
-
-        words = len(review.split())
-        chars = len(review)
-
-        col1, col2 = st.columns(2)
-
-        col1.metric("Word Count", words)
-        col2.metric("Character Count", chars)
-
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # ----------------------------
-        # PROGRESS ANIMATION
-        # ----------------------------
-
-        st.subheader("Confidence Progress")
-
-        progress = st.progress(0)
-
-        for i in range(int(confidence*100)):
-            progress.progress(i+1)
-            time.sleep(0.01)
-
-        # ----------------------------
-        # INSIGHT
-        # ----------------------------
-
-        if confidence > 0.85:
-            st.info("🔥 High confidence prediction")
-        elif confidence > 0.65:
-            st.info("⚡ Moderate confidence prediction")
         else:
-            st.warning("⚠ Low confidence prediction")
+
+            sentiment, pos, neg = predict_sentiment(review)
+
+            st.success(f"Prediction: {sentiment}")
+
+            # Probability Chart
+            fig = go.Figure(data=[
+                go.Bar(name="Positive", x=["Sentiment"], y=[pos]),
+                go.Bar(name="Negative", x=["Sentiment"], y=[neg])
+            ])
+
+            fig.update_layout(title="Sentiment Probability")
+
+            st.plotly_chart(fig)
+
+            # Confidence Gauge
+            confidence = max(pos, neg)
+
+            gauge = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=confidence*100,
+                title={'text': "Confidence"},
+                gauge={'axis': {'range': [0, 100]}}
+            ))
+
+            st.plotly_chart(gauge)
+
+            # Statistics
+            st.subheader("Review Statistics")
+
+            col1, col2 = st.columns(2)
+
+            col1.metric("Word Count", len(review.split()))
+            col2.metric("Character Count", len(review))
+
+            # Word Cloud
+            words = clean_text(review)
+
+            wc = WordCloud(width=800, height=400).generate(" ".join(words))
+
+            plt.imshow(wc)
+            plt.axis("off")
+
+            st.pyplot(plt)
+
+            # Top Words
+            st.subheader("Top Keywords")
+
+            freq = Counter(words).most_common(10)
+
+            for word, count in freq:
+                st.write(word, ":", count)
+
+
+# =================================================
+# BULK CSV ANALYSIS
+# =================================================
+
+if mode == "Bulk CSV Analysis":
+
+    file = st.file_uploader("Upload CSV file with column 'Text'")
+
+    if file:
+
+        df = pd.read_csv(file)
+
+        if "Text" not in df.columns:
+            st.error("CSV must contain column 'Text'")
+
+        else:
+
+            sentiments = []
+
+            for review in df["Text"]:
+
+                sentiment, _, _ = predict_sentiment(str(review))
+
+                sentiments.append(sentiment)
+
+            df["Sentiment"] = sentiments
+
+            st.dataframe(df.head())
+
+            # Sentiment Distribution
+            counts = df["Sentiment"].value_counts()
+
+            fig = go.Figure([
+                go.Bar(x=counts.index, y=counts.values)
+            ])
+
+            fig.update_layout(title="Sentiment Distribution")
+
+            st.plotly_chart(fig)
+
+            # Word Cloud for Dataset
+            text_all = " ".join(df["Text"].astype(str))
+
+            wc = WordCloud(width=800, height=400).generate(text_all)
+
+            plt.imshow(wc)
+            plt.axis("off")
+
+            st.pyplot(plt)
+
+            # Download Results
+            csv = df.to_csv(index=False).encode()
+
+            st.download_button(
+                "Download Results",
+                csv,
+                "sentiment_results.csv",
+                "text/csv"
+            )
